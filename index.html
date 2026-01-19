@@ -123,9 +123,22 @@
                          <button onclick="forceRefresh()" class="text-xs bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 px-3 py-1.5 rounded-full transition flex items-center gap-1 shadow-sm">
                             <i class="fas fa-sync-alt"></i> อัปเดตข้อมูล
                         </button>
-                        <div class="flex items-center gap-2 text-sm bg-white border border-gray-200 px-4 py-1.5 rounded-full shadow-sm">
-                            <i class="fas fa-calendar-alt text-thai-herb-600"></i>
-                            <span id="report-date" class="text-gray-700 font-medium">...</span>
+                        
+                        <!-- Date Picker Wrapper -->
+                        <!-- FIX: Added onclick here to trigger picker explicitly from the container -->
+                        <div class="relative flex items-center gap-2 text-sm bg-white border border-gray-200 px-4 py-1.5 rounded-full shadow-sm hover:border-green-400 transition-colors group cursor-pointer" 
+                             title="คลิกเพื่อเลือกวันที่"
+                             onclick="try{document.getElementById('report-date-picker').showPicker()}catch(e){}">
+                            
+                            <i class="fas fa-calendar-alt text-thai-herb-600 group-hover:text-thai-herb-700"></i>
+                            
+                            <!-- Display Text (Thai Format) -->
+                            <span id="date-display-text" class="text-gray-700 font-medium min-w-[140px] text-center">กำลังโหลด...</span>
+                            
+                            <!-- Hidden Date Input -->
+                            <!-- FIX: Added pointer-events-none so clicks pass through to the parent DIV, ensuring showPicker() is called -->
+                            <input type="date" id="report-date-picker" onchange="onDateChanged(this.value)" 
+                                   class="absolute inset-0 w-full h-full opacity-0 pointer-events-none -z-10">
                         </div>
                     </div>
                 </div>
@@ -138,7 +151,7 @@
             <!-- SECTION 1: TODAY STATS -->
             <div class="mb-3 flex items-center gap-2 animate-slide-up" style="animation-delay: 0.1s;">
                 <div class="h-6 w-1 bg-thai-herb-500 rounded-full"></div>
-                <h2 class="text-lg font-bold text-gray-800">ภาพรวมวันนี้</h2>
+                <h2 class="text-lg font-bold text-gray-800">ภาพรวมรายวัน</h2>
             </div>
             
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 animate-slide-up" style="animation-delay: 0.2s;">
@@ -293,6 +306,9 @@
         const CACHE_TIME_KEY = 'herbal_dashboard_time';
         const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes cache
         
+        // Global Data Store
+        let globalData = [];
+
         // Helpers
         const parseNumber = (val) => {
             if (!val) return 0;
@@ -321,6 +337,31 @@
             loadData();
         }
 
+        function onDateChanged(newDate) {
+            updateDateDisplay(newDate); // Update Text
+            if (globalData.length > 0) {
+                renderDashboard(globalData, newDate);
+            }
+        }
+
+        function updateDateDisplay(dateStr) {
+            if(!dateStr) return;
+            const parts = dateStr.split('-');
+            const year = parseInt(parts[0]);
+            const monthIndex = parseInt(parts[1]) - 1;
+            const day = parseInt(parts[2]);
+
+            const thaiMonths = [
+                "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+                "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+            ];
+
+            const y = year + 543;
+            const m = thaiMonths[monthIndex];
+            
+            document.getElementById('date-display-text').innerText = `วันที่ ${day} ${m} ${y}`;
+        }
+
         async function loadData() {
             // Check Cache
             const cachedData = localStorage.getItem(CACHE_KEY);
@@ -328,10 +369,11 @@
             const now = new Date().getTime();
 
             if (cachedData && cachedTime && (now - cachedTime < CACHE_DURATION)) {
-                // Use Cache
                 console.log('Using cached data');
                 try {
-                    processData(JSON.parse(cachedData));
+                    const parsed = JSON.parse(cachedData);
+                    globalData = parsed;
+                    initDashboard(parsed);
                     return;
                 } catch(e) {
                     console.error('Cache parsing error', e);
@@ -351,7 +393,8 @@
                                 localStorage.setItem(CACHE_TIME_KEY, now);
                             } catch (e) { console.warn('Storage full'); }
                             
-                            processData(results.data);
+                            globalData = results.data;
+                            initDashboard(results.data);
                         } else {
                             console.warn("Using mock data.");
                             useMockData();
@@ -402,26 +445,26 @@
                     'มูลค่าการใช้ยา รวม': costVal
                 });
             }
-            processData(mockData);
+            globalData = mockData;
+            initDashboard(mockData);
         }
 
-        function processData(data) {
-            // Find Latest Date
-            let latestDateStr = "";
-            data.forEach(row => {
-                const dateVal = row['date'] || row['Date'] || row['วันที่'] || row['ว/ด/ป'];
-                if (dateVal) {
-                    try {
-                        const d = new Date(dateVal);
-                        if (!isNaN(d)) {
-                            const dStr = d.toISOString().split('T')[0];
-                            if (dStr > latestDateStr) latestDateStr = dStr;
-                        }
-                    } catch (e) {}
-                }
-            });
-            if (!latestDateStr) latestDateStr = new Date().toISOString().split('T')[0];
+        // Setup Date Picker and Initial Render
+        function initDashboard(data) {
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(today.getDate() - 1);
+            const yesterdayStr = yesterday.toISOString().split('T')[0];
 
+            // Set Date Picker default
+            document.getElementById('report-date-picker').value = yesterdayStr;
+            updateDateDisplay(yesterdayStr);
+            
+            // Render with default date
+            renderDashboard(data, yesterdayStr);
+        }
+
+        function renderDashboard(data, targetDateStr) {
             let todayStats = { users: new Set(), explicitUserSum: 0, items: 0, explicitQtySum: 0, cost: 0, explicitCostSum: 0 };
             let totalStats = { users: new Set(), explicitUserSum: 0, items: 0, explicitQtySum: 0, cost: 0, explicitCostSum: 0 };
             let drugAggregates = {};
@@ -452,7 +495,7 @@
                     if(!isNaN(d)) rowDateStr = d.toISOString().split('T')[0];
                 } catch(e) {}
 
-                // CUMULATIVE
+                // CUMULATIVE (All Time / Fiscal Year)
                 if (hasUserCol) totalStats.explicitUserSum += explicitUserVal;
                 else if (hnVal) totalStats.users.add(hnVal);
 
@@ -462,8 +505,8 @@
                 if (hasCostCol) totalStats.explicitCostSum += explicitCostVal;
                 else totalStats.explicitCostSum += costVal;
 
-                // TODAY
-                if (rowDateStr === latestDateStr) {
+                // TODAY (Filtered by Date Picker)
+                if (rowDateStr === targetDateStr) {
                     if (hasUserCol) todayStats.explicitUserSum += explicitUserVal;
                     else if (hnVal) todayStats.users.add(hnVal);
 
@@ -474,7 +517,7 @@
                     else todayStats.explicitCostSum += costVal;
                 }
 
-                // TABLE AGGREGATES
+                // TABLE AGGREGATES (Cumulative)
                 if (!drugAggregates[drugVal]) {
                     drugAggregates[drugVal] = { name: drugVal, userSum: 0, qtySum: 0, costSum: 0 };
                 }
@@ -496,29 +539,22 @@
             const tableData = Object.values(drugAggregates).sort((a, b) => b.costSum - a.costSum);
 
             // Update UI
-            updateDashboard({
+            updateDashboardUI({
                 today: { users: finalTodayUsers, items: finalTodayQty, cost: finalTodayCost },
                 total: { users: finalTotalUsers, items: finalTotalItems, cost: finalTotalCost },
                 table: tableData
             });
         }
 
-        function updateDashboard(stats) {
+        function updateDashboardUI(stats) {
             // Animate Numbers
-            animateValue("today-users", 0, stats.today.users, 1500);
-            animateValue("today-items", 0, stats.today.items, 1500);
-            animateValue("today-cost", 0, stats.today.cost, 1500, true);
+            animateValue("today-users", 0, stats.today.users, 1000);
+            animateValue("today-items", 0, stats.today.items, 1000);
+            animateValue("today-cost", 0, stats.today.cost, 1000, true);
 
-            animateValue("total-users", 0, stats.total.users, 2000);
-            animateValue("total-items", 0, stats.total.items, 2000);
-            animateValue("total-cost", 0, stats.total.cost, 2000, true);
-
-            // Date
-            const today = new Date();
-            const yesterday = new Date(today);
-            yesterday.setDate(today.getDate() - 1);
-            const formattedDate = yesterday.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
-            document.getElementById('report-date').innerText = `วันที่ ${formattedDate}`;
+            animateValue("total-users", 0, stats.total.users, 1500);
+            animateValue("total-items", 0, stats.total.items, 1500);
+            animateValue("total-cost", 0, stats.total.cost, 1500, true);
 
             // Render Table
             renderTable(stats.table);
@@ -531,23 +567,12 @@
 
         function animateValue(id, start, end, duration, isCost = false) {
             const obj = document.getElementById(id);
-            let startTimestamp = null;
-            const step = (timestamp) => {
-                if (!startTimestamp) startTimestamp = timestamp;
-                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-                const value = Math.floor(progress * (end - start) + start);
-                
-                if (isCost) {
-                    obj.innerText = new Intl.NumberFormat('th-TH', { style: 'decimal', maximumFractionDigits: 0 }).format(value);
-                } else {
-                    obj.innerText = formatNumber(value);
-                }
-
-                if (progress < 1) {
-                    window.requestAnimationFrame(step);
-                }
-            };
-            window.requestAnimationFrame(step);
+            // Simple update to avoid conflicting animations on rapid date change
+            if (isCost) {
+                obj.innerText = new Intl.NumberFormat('th-TH', { style: 'decimal', maximumFractionDigits: 0 }).format(end);
+            } else {
+                obj.innerText = formatNumber(end);
+            }
         }
 
         function renderTable(data) {

@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard รายงานการใช้ยาสมุนไพร - โรงพยาบาลกุสุมาลย์</title>
+    
+    <!-- Preconnect for Speed -->
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    
+    <!-- Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Configuration & Styles -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'sans-serif'],
+                    },
+                    colors: {
+                        'thai-herb': {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                        }
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-out',
+                        'slide-up': 'slideUp 0.5s ease-out',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #f3f4f6;
+            font-family: 'Prompt', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card-hover:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+            flex-direction: column;
+            backdrop-filter: blur(5px);
+            transition: opacity 0.3s ease;
+        }
+        .spinner {
+            border: 4px solid #e5e7eb;
+            border-top: 4px solid #15803d;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .glass-header {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Screen -->
+    <div id="loading" class="loading-overlay">
+        <div class="spinner mb-4"></div>
+        <p class="text-thai-herb-800 font-medium animate-pulse">กำลังประมวลผลข้อมูล...</p>
+    </div>
+
+    <!-- Main Container -->
+    <div class="min-h-screen pb-2 flex flex-col">
+        
+        <!-- Header -->
+        <header class="glass-header sticky top-0 z-40 transition-all duration-300">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div class="flex items-center gap-3 animate-fade-in">
+                        <div class="bg-gradient-to-br from-thai-herb-100 to-green-200 p-2.5 rounded-xl text-thai-herb-700 shadow-sm">
+                            <i class="fas fa-leaf text-2xl"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-xl font-bold text-gray-800 tracking-tight">รายงานการใช้ยาสมุนไพร</h1>
+                            <p class="text-sm text-gray-500">โรงพยาบาลกุสุมาลย์ จังหวัดสกลนคร</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 animate-fade-in">
+                         <button onclick="forceRefresh()" class="text-xs bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 px-3 py-1.5 rounded-full transition flex items-center gap-1 shadow-sm">
+                            <i class="fas fa-sync-alt"></i> อัปเดตข้อมูล
+                        </button>
+                        <div class="flex items-center gap-2 text-sm bg-white border border-gray-200 px-4 py-1.5 rounded-full shadow-sm">
+                            <i class="fas fa-calendar-alt text-thai-herb-600"></i>
+                            <span id="report-date" class="text-gray-700 font-medium">...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Area -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 flex-grow w-full">
+            
+            <!-- SECTION 1: TODAY STATS -->
+            <div class="mb-3 flex items-center gap-2 animate-slide-up" style="animation-delay: 0.1s;">
+                <div class="h-6 w-1 bg-thai-herb-500 rounded-full"></div>
+                <h2 class="text-lg font-bold text-gray-800">ภาพรวมวันนี้</h2>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 animate-slide-up" style="animation-delay: 0.2s;">
+                <!-- Card 1.1: Users Today -->
+                <div class="bg-white rounded-2xl shadow-sm p-6 card-hover border border-gray-100 relative overflow-hidden group">
+                    <div class="absolute right-0 top-0 h-24 w-24 bg-blue-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                    <div class="relative z-10 flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 mb-1">ผู้ป่วยได้รับยาวันนี้</p>
+                            <h3 class="text-4xl font-bold text-gray-800 tracking-tight"><span class="count-up" id="today-users">0</span></h3>
+                            <p class="text-xs text-gray-600 mt-2 font-medium">คน</p>
+                        </div>
+                        <div class="p-3 bg-white rounded-xl text-blue-500 shadow-sm ring-1 ring-gray-100">
+                            <i class="fas fa-user-injured text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 1.2: Items Today -->
+                <div class="bg-white rounded-2xl shadow-sm p-6 card-hover border border-gray-100 relative overflow-hidden group">
+                    <div class="absolute right-0 top-0 h-24 w-24 bg-amber-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                    <div class="relative z-10 flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 mb-1">จำนวนยาที่จ่ายวันนี้</p>
+                            <h3 class="text-4xl font-bold text-gray-800 tracking-tight"><span class="count-up" id="today-items">0</span></h3>
+                            <p class="text-xs text-gray-600 mt-2 font-medium">Unit</p>
+                        </div>
+                        <div class="p-3 bg-white rounded-xl text-amber-500 shadow-sm ring-1 ring-gray-100">
+                            <i class="fas fa-pills text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 1.3: Cost Today -->
+                <div class="bg-white rounded-2xl shadow-sm p-6 card-hover border border-gray-100 relative overflow-hidden group">
+                    <div class="absolute right-0 top-0 h-24 w-24 bg-emerald-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                    <div class="relative z-10 flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 mb-1">มูลค่ายาที่จ่ายวันนี้</p>
+                            <h3 class="text-4xl font-bold text-emerald-600 tracking-tight"><span class="count-up" id="today-cost">0</span></h3>
+                            <p class="text-xs text-gray-600 mt-2 font-medium">บาท</p>
+                        </div>
+                        <div class="p-3 bg-white rounded-xl text-emerald-500 shadow-sm ring-1 ring-gray-100">
+                            <i class="fas fa-coins text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2: CUMULATIVE STATS -->
+            <div class="mb-3 flex items-center gap-2 animate-slide-up" style="animation-delay: 0.3s;">
+                <div class="h-6 w-1 bg-thai-herb-500 rounded-full"></div>
+                <h2 class="text-lg font-bold text-gray-800">ภาพรวมปีงบประมาณ 2569</h2>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 animate-slide-up" style="animation-delay: 0.4s;">
+                <!-- Card 2.1: Users Cumulative -->
+                <div class="bg-white rounded-2xl shadow-sm p-6 card-hover border border-gray-100">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 mb-1">ผู้ป่วยได้รับยาสะสม</p>
+                            <h3 class="text-3xl font-bold text-gray-800"><span class="count-up" id="total-users">0</span></h3>
+                            <p class="text-xs text-gray-600 mt-1 font-medium">คน</p>
+                        </div>
+                        <div class="h-12 w-12 rounded-full bg-gray-50 flex items-center justify-center text-gray-400">
+                            <i class="fas fa-users text-lg"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 h-1 w-full bg-gray-100 rounded-full overflow-hidden">
+                        <div class="h-full bg-blue-500 w-3/4 rounded-full"></div>
+                    </div>
+                </div>
+
+                <!-- Card 2.2: Items Cumulative -->
+                <div class="bg-white rounded-2xl shadow-sm p-6 card-hover border border-gray-100">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 mb-1">จำนวนยาที่จ่ายสะสม</p>
+                            <h3 class="text-3xl font-bold text-gray-800"><span class="count-up" id="total-items">0</span></h3>
+                            <p class="text-xs text-gray-600 mt-1 font-medium">Unit</p>
+                        </div>
+                        <div class="h-12 w-12 rounded-full bg-gray-50 flex items-center justify-center text-gray-400">
+                            <i class="fas fa-cubes text-lg"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 h-1 w-full bg-gray-100 rounded-full overflow-hidden">
+                        <div class="h-full bg-amber-500 w-2/3 rounded-full"></div>
+                    </div>
+                </div>
+
+                <!-- Card 2.3: Cost Cumulative -->
+                <div class="bg-gradient-to-br from-thai-herb-600 to-thai-herb-800 rounded-2xl shadow-lg p-6 card-hover text-white relative overflow-hidden">
+                    <div class="absolute -right-6 -bottom-6 text-white opacity-10">
+                        <i class="fas fa-hand-holding-dollar text-9xl"></i>
+                    </div>
+                    <div class="relative z-10">
+                        <p class="text-sm font-medium text-green-100 mb-1 opacity-90">มูลค่ายาที่จ่ายสะสม</p>
+                        <h3 class="text-4xl font-bold text-white mt-2"><span class="count-up" id="total-cost">0</span></h3>
+                        <p class="text-xs text-green-200 mt-2 font-medium">บาท</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 3: TOP 10 TABLE -->
+            <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100 mb-2 animate-slide-up" style="animation-delay: 0.6s;">
+                <div class="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/50">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">10 อันดับยาสมุนไพรที่มีมูลค่าการใช้สูงที่สุด</h3>
+                        <p class="text-sm text-gray-500">เรียงตามมูลค่าการใช้</p>
+                    </div>
+                    <!-- Search Box -->
+                    <div class="relative w-full sm:w-64">
+                        <input type="text" id="searchInput" onkeyup="searchTable()" placeholder="ค้นหารายการยา..." 
+                            class="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none transition-all text-sm">
+                        <i class="fas fa-search absolute left-3 top-2.5 text-gray-400"></i>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider font-semibold">
+                                <th class="p-4 border-b text-center w-16">อันดับ</th>
+                                <th class="p-4 border-b">รายการยา</th>
+                                <th class="p-4 border-b text-center">จำนวนผู้ป่วย (คน)</th>
+                                <th class="p-4 border-b text-center">ปริมาณการใช้ (Unit)</th>
+                                <th class="p-4 border-b text-right">มูลค่าการใช้ (บาท)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="top-drugs-table" class="text-sm text-gray-700 divide-y divide-gray-100">
+                            <!-- Rows will be injected here via JS -->
+                        </tbody>
+                    </table>
+                    <div id="no-results" class="hidden p-8 text-center text-gray-500">
+                        <i class="fas fa-search-minus text-3xl mb-2 text-gray-300"></i>
+                        <p>ไม่พบรายการยาที่ค้นหา</p>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+        
+        <footer class="text-center text-gray-400 text-xs pb-4 mt-0">
+            <p>© 2026 โรงพยาบาลกุสุมาลย์ จังหวัดสกลนคร</p>
+        </footer>
+    </div>
+
+    <!-- Script Logic -->
+    <script>
+        // CONFIGURATION
+        const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSmpWKjiyk3tuNyhWgUs4JWzP2eEp9gXOosQookS6NdPCkyFh6wpFzRTwOdxWtMHzDm9PSU3Jh0fsU5/pub?gid=0&single=true&output=csv';
+        const CACHE_KEY = 'herbal_dashboard_data';
+        const CACHE_TIME_KEY = 'herbal_dashboard_time';
+        const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes cache
+        
+        // Helpers
+        const parseNumber = (val) => {
+            if (!val) return 0;
+            if (typeof val === 'number') return val;
+            return parseFloat(String(val).replace(/,/g, '')) || 0;
+        };
+
+        const formatMoney = (amount) => {
+            return new Intl.NumberFormat('th-TH', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+        };
+
+        const formatNumber = (num) => {
+            return new Intl.NumberFormat('th-TH').format(num);
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData();
+        });
+
+        function forceRefresh() {
+            localStorage.removeItem(CACHE_KEY);
+            localStorage.removeItem(CACHE_TIME_KEY);
+            document.getElementById('loading').style.display = 'flex';
+            document.getElementById('loading').style.opacity = '1';
+            loadData();
+        }
+
+        async function loadData() {
+            // Check Cache
+            const cachedData = localStorage.getItem(CACHE_KEY);
+            const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
+            const now = new Date().getTime();
+
+            if (cachedData && cachedTime && (now - cachedTime < CACHE_DURATION)) {
+                // Use Cache
+                console.log('Using cached data');
+                try {
+                    processData(JSON.parse(cachedData));
+                    return;
+                } catch(e) {
+                    console.error('Cache parsing error', e);
+                }
+            }
+
+            // Fetch Fresh Data
+            try {
+                Papa.parse(SHEET_CSV_URL, {
+                    download: true,
+                    header: true,
+                    complete: function(results) {
+                        if(results.data && results.data.length > 0) {
+                            // Save Cache
+                            try {
+                                localStorage.setItem(CACHE_KEY, JSON.stringify(results.data));
+                                localStorage.setItem(CACHE_TIME_KEY, now);
+                            } catch (e) { console.warn('Storage full'); }
+                            
+                            processData(results.data);
+                        } else {
+                            console.warn("Using mock data.");
+                            useMockData();
+                        }
+                    },
+                    error: function(err) {
+                        console.error("CSV Fetch Error:", err);
+                        useMockData();
+                    }
+                });
+            } catch (error) {
+                useMockData();
+            }
+        }
+
+        function useMockData() {
+            const mockData = [];
+            const drugs = [
+                {name: 'ขมิ้นชันแคปซูล 250 mg', cost: 1.5},
+                {name: 'ฟ้าทะลายโจรแคปซูล', cost: 2.0},
+                {name: 'ยาแก้ไอมะขามป้อม', cost: 45.0},
+                {name: 'เถาวัลย์เปรียงแคปซูล', cost: 3.5},
+                {name: 'ครีมไพลจีซาล', cost: 35.0},
+                {name: 'ยาหอมเทพจิตร', cost: 12.0},
+                {name: 'รางจืดแคปซูล', cost: 2.5},
+                {name: 'พริกเจล (Capsaicin)', cost: 55.0},
+                {name: 'ยาธาตุอบเชย', cost: 28.0},
+                {name: 'น้ำมันไพล', cost: 40.0},
+                {name: 'ยาประสะไพล', cost: 3.0},
+                {name: 'อภัยภูเบศร เฮอร์บอล บาล์ม', cost: 60.0}
+            ];
+            const today = new Date();
+            for (let i = 0; i < 200; i++) {
+                const daysAgo = Math.floor(Math.random() * 30);
+                const date = new Date();
+                date.setDate(today.getDate() - daysAgo);
+                const drug = drugs[Math.floor(Math.random() * drugs.length)];
+                const qty = Math.floor(Math.random() * 20) + 1;
+                const costVal = (drug.cost * qty).toFixed(2);
+                mockData.push({
+                    'date': date.toISOString().split('T')[0],
+                    'drug_name': drug.name,
+                    'hn': `HN-${Math.floor(Math.random() * 50) + 1000}`,
+                    'qty': qty,
+                    'total_cost': costVal,
+                    'จำนวนผู้ป่วยใช้ยา รวม': Math.floor(Math.random() * 5) + 1,
+                    'ปริมาณการใช้ยา รวม': qty,
+                    'มูลค่าการใช้ยา รวม': costVal
+                });
+            }
+            processData(mockData);
+        }
+
+        function processData(data) {
+            // Find Latest Date
+            let latestDateStr = "";
+            data.forEach(row => {
+                const dateVal = row['date'] || row['Date'] || row['วันที่'] || row['ว/ด/ป'];
+                if (dateVal) {
+                    try {
+                        const d = new Date(dateVal);
+                        if (!isNaN(d)) {
+                            const dStr = d.toISOString().split('T')[0];
+                            if (dStr > latestDateStr) latestDateStr = dStr;
+                        }
+                    } catch (e) {}
+                }
+            });
+            if (!latestDateStr) latestDateStr = new Date().toISOString().split('T')[0];
+
+            let todayStats = { users: new Set(), explicitUserSum: 0, items: 0, explicitQtySum: 0, cost: 0, explicitCostSum: 0 };
+            let totalStats = { users: new Set(), explicitUserSum: 0, items: 0, explicitQtySum: 0, cost: 0, explicitCostSum: 0 };
+            let drugAggregates = {};
+
+            // Check if specific columns exist in first row
+            const firstRow = data[0] || {};
+            const hasUserCol = firstRow['จำนวนผู้ป่วยใช้ยา รวม'] !== undefined;
+            const hasQtyCol = firstRow['ปริมาณการใช้ยา รวม'] !== undefined;
+            const hasCostCol = firstRow['มูลค่าการใช้ยา รวม'] !== undefined;
+
+            data.forEach(row => {
+                const dateVal = row['date'] || row['Date'] || row['วันที่'];
+                const hnVal = row['hn'] || row['HN'] || row['รหัสผู้ป่วย'];
+                const drugVal = row['drug_name'] || row['Item'] || row['รายการยา'];
+                
+                if (!drugVal) return;
+
+                const qtyVal = parseNumber(row['qty'] || row['จำนวน']);
+                const costVal = parseNumber(row['total_cost'] || row['มูลค่า'] || row['total_price']);
+                
+                const explicitUserVal = parseNumber(row['จำนวนผู้ป่วยใช้ยา รวม']);
+                const explicitQtyVal = parseNumber(row['ปริมาณการใช้ยา รวม']);
+                const explicitCostVal = parseNumber(row['มูลค่าการใช้ยา รวม']);
+
+                let rowDateStr = '';
+                try {
+                    const d = new Date(dateVal);
+                    if(!isNaN(d)) rowDateStr = d.toISOString().split('T')[0];
+                } catch(e) {}
+
+                // CUMULATIVE
+                if (hasUserCol) totalStats.explicitUserSum += explicitUserVal;
+                else if (hnVal) totalStats.users.add(hnVal);
+
+                if (hasQtyCol) totalStats.explicitQtySum += explicitQtyVal;
+                else totalStats.explicitQtySum += qtyVal;
+
+                if (hasCostCol) totalStats.explicitCostSum += explicitCostVal;
+                else totalStats.explicitCostSum += costVal;
+
+                // TODAY
+                if (rowDateStr === latestDateStr) {
+                    if (hasUserCol) todayStats.explicitUserSum += explicitUserVal;
+                    else if (hnVal) todayStats.users.add(hnVal);
+
+                    if (hasQtyCol) todayStats.explicitQtySum += explicitQtyVal;
+                    else todayStats.explicitQtySum += qtyVal;
+
+                    if (hasCostCol) todayStats.explicitCostSum += explicitCostVal;
+                    else todayStats.explicitCostSum += costVal;
+                }
+
+                // TABLE AGGREGATES
+                if (!drugAggregates[drugVal]) {
+                    drugAggregates[drugVal] = { name: drugVal, userSum: 0, qtySum: 0, costSum: 0 };
+                }
+                drugAggregates[drugVal].userSum += hasUserCol ? explicitUserVal : 1;
+                drugAggregates[drugVal].qtySum += hasQtyCol ? explicitQtyVal : qtyVal;
+                drugAggregates[drugVal].costSum += hasCostCol ? explicitCostVal : costVal;
+            });
+
+            // Calculate Finals
+            const finalTodayUsers = hasUserCol ? todayStats.explicitUserSum : todayStats.users.size;
+            const finalTodayQty = todayStats.explicitQtySum;
+            const finalTodayCost = hasCostCol ? todayStats.explicitCostSum : todayStats.explicitCostSum;
+
+            const finalTotalUsers = hasUserCol ? totalStats.explicitUserSum : totalStats.users.size;
+            const finalTotalItems = totalStats.explicitQtySum;
+            const finalTotalCost = hasCostCol ? totalStats.explicitCostSum : totalStats.explicitCostSum;
+
+            // Prepare Table Data (Top 10)
+            const tableData = Object.values(drugAggregates).sort((a, b) => b.costSum - a.costSum);
+
+            // Update UI
+            updateDashboard({
+                today: { users: finalTodayUsers, items: finalTodayQty, cost: finalTodayCost },
+                total: { users: finalTotalUsers, items: finalTotalItems, cost: finalTotalCost },
+                table: tableData
+            });
+        }
+
+        function updateDashboard(stats) {
+            // Animate Numbers
+            animateValue("today-users", 0, stats.today.users, 1500);
+            animateValue("today-items", 0, stats.today.items, 1500);
+            animateValue("today-cost", 0, stats.today.cost, 1500, true);
+
+            animateValue("total-users", 0, stats.total.users, 2000);
+            animateValue("total-items", 0, stats.total.items, 2000);
+            animateValue("total-cost", 0, stats.total.cost, 2000, true);
+
+            // Date
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(today.getDate() - 1);
+            const formattedDate = yesterday.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+            document.getElementById('report-date').innerText = `วันที่ ${formattedDate}`;
+
+            // Render Table
+            renderTable(stats.table);
+
+            // Hide Loading
+            const loading = document.getElementById('loading');
+            loading.style.opacity = '0';
+            setTimeout(() => loading.style.display = 'none', 300);
+        }
+
+        function animateValue(id, start, end, duration, isCost = false) {
+            const obj = document.getElementById(id);
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const value = Math.floor(progress * (end - start) + start);
+                
+                if (isCost) {
+                    obj.innerText = new Intl.NumberFormat('th-TH', { style: 'decimal', maximumFractionDigits: 0 }).format(value);
+                } else {
+                    obj.innerText = formatNumber(value);
+                }
+
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('top-drugs-table');
+            tbody.innerHTML = '';
+            
+            // Top 10
+            const top10 = data.slice(0, 10);
+
+            if (top10.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-gray-400">ไม่พบข้อมูล</td></tr>';
+                return;
+            }
+
+            top10.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                tr.className = index % 2 === 0 ? 'bg-white hover:bg-green-50/50 transition' : 'bg-gray-50/50 hover:bg-green-50/50 transition';
+                
+                let rankHtml = `<span class="font-bold text-gray-400">${index + 1}</span>`;
+                if (index === 0) rankHtml = `<div class="bg-yellow-100 text-yellow-700 h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold mx-auto shadow-sm">1</div>`;
+                if (index === 1) rankHtml = `<div class="bg-gray-100 text-gray-600 h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold mx-auto shadow-sm">2</div>`;
+                if (index === 2) rankHtml = `<div class="bg-orange-100 text-orange-700 h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold mx-auto shadow-sm">3</div>`;
+
+                tr.innerHTML = `
+                    <td class="p-4 border-b border-gray-100 text-center">${rankHtml}</td>
+                    <td class="p-4 border-b border-gray-100 font-medium text-gray-800">${item.name}</td>
+                    <td class="p-4 border-b border-gray-100 text-center text-gray-600">${formatNumber(item.userSum)}</td>
+                    <td class="p-4 border-b border-gray-100 text-center text-gray-600">${formatNumber(item.qtySum)}</td>
+                    <td class="p-4 border-b border-gray-100 text-right font-semibold text-emerald-600">${formatMoney(item.costSum)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function searchTable() {
+            const input = document.getElementById("searchInput");
+            const filter = input.value.toLowerCase();
+            const table = document.querySelector("table");
+            const tr = table.getElementsByTagName("tr");
+            let hasResult = false;
+
+            for (let i = 1; i < tr.length; i++) {
+                const td = tr[i].getElementsByTagName("td")[1];
+                if (td) {
+                    const txtValue = td.textContent || td.innerText;
+                    if (txtValue.toLowerCase().indexOf(filter) > -1) {
+                        tr[i].style.display = "";
+                        hasResult = true;
+                    } else {
+                        tr[i].style.display = "none";
+                    }
+                }
+            }
+            
+            const noRes = document.getElementById("no-results");
+            noRes.style.display = hasResult ? "none" : "block";
+        }
+    </script>
+</body>
+</html>

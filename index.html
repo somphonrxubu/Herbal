@@ -12,6 +12,11 @@
     <!-- Libraries -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Added ChartDataLabels Plugin for displaying values on graph -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
 
@@ -125,18 +130,14 @@
                         </button>
                         
                         <!-- Date Picker Wrapper -->
-                        <!-- FIX: Added onclick here to trigger picker explicitly from the container -->
                         <div class="relative flex items-center gap-2 text-sm bg-white border border-gray-200 px-4 py-1.5 rounded-full shadow-sm hover:border-green-400 transition-colors group cursor-pointer" 
                              title="คลิกเพื่อเลือกวันที่"
                              onclick="try{document.getElementById('report-date-picker').showPicker()}catch(e){}">
                             
                             <i class="fas fa-calendar-alt text-thai-herb-600 group-hover:text-thai-herb-700"></i>
                             
-                            <!-- Display Text (Thai Format) -->
                             <span id="date-display-text" class="text-gray-700 font-medium min-w-[140px] text-center">กำลังโหลด...</span>
                             
-                            <!-- Hidden Date Input -->
-                            <!-- FIX: Added pointer-events-none so clicks pass through to the parent DIV, ensuring showPicker() is called -->
                             <input type="date" id="report-date-picker" onchange="onDateChanged(this.value)" 
                                    class="absolute inset-0 w-full h-full opacity-0 pointer-events-none -z-10">
                         </div>
@@ -207,7 +208,7 @@
                 <h2 class="text-lg font-bold text-gray-800">ภาพรวมปีงบประมาณ 2569</h2>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 animate-slide-up" style="animation-delay: 0.4s;">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-slide-up" style="animation-delay: 0.4s;">
                 <!-- Card 2.1: Users Cumulative -->
                 <div class="bg-white rounded-2xl shadow-sm p-6 card-hover border border-gray-100">
                     <div class="flex justify-between items-center">
@@ -252,6 +253,19 @@
                         <h3 class="text-4xl font-bold text-white mt-2"><span class="count-up" id="total-cost">0</span></h3>
                         <p class="text-xs text-green-200 mt-2 font-medium">บาท</p>
                     </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2.5: TREND CHART (NEW) -->
+            <div class="mb-3 flex items-center gap-2 animate-slide-up" style="animation-delay: 0.45s;">
+                <div class="h-6 w-1 bg-thai-herb-500 rounded-full"></div>
+                <h2 class="text-lg font-bold text-gray-800">แนวโน้มมูลค่าการใช้ยา</h2>
+            </div>
+            
+            <!-- CHANGED: Reduced height from h-60 to h-[200px] (approx h-50) -->
+            <div class="bg-white rounded-2xl shadow-sm p-6 card-hover border border-gray-100 mb-10 animate-slide-up" style="animation-delay: 0.5s;">
+                <div class="w-full h-[200px] relative">
+                    <canvas id="trendChart"></canvas>
                 </div>
             </div>
 
@@ -308,6 +322,7 @@
         
         // Global Data Store
         let globalData = [];
+        let trendChartInstance = null; 
 
         // Helpers
         const parseNumber = (val) => {
@@ -326,6 +341,10 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            // Register ChartDataLabels plugin
+            if (typeof ChartDataLabels !== 'undefined') {
+                Chart.register(ChartDataLabels);
+            }
             loadData();
         });
 
@@ -338,7 +357,7 @@
         }
 
         function onDateChanged(newDate) {
-            updateDateDisplay(newDate); // Update Text
+            updateDateDisplay(newDate); 
             if (globalData.length > 0) {
                 renderDashboard(globalData, newDate);
             }
@@ -387,7 +406,6 @@
                     header: true,
                     complete: function(results) {
                         if(results.data && results.data.length > 0) {
-                            // Save Cache
                             try {
                                 localStorage.setItem(CACHE_KEY, JSON.stringify(results.data));
                                 localStorage.setItem(CACHE_TIME_KEY, now);
@@ -427,8 +445,8 @@
                 {name: 'อภัยภูเบศร เฮอร์บอล บาล์ม', cost: 60.0}
             ];
             const today = new Date();
-            for (let i = 0; i < 200; i++) {
-                const daysAgo = Math.floor(Math.random() * 30);
+            for (let i = 0; i < 300; i++) {
+                const daysAgo = Math.floor(Math.random() * 60); 
                 const date = new Date();
                 date.setDate(today.getDate() - daysAgo);
                 const drug = drugs[Math.floor(Math.random() * drugs.length)];
@@ -449,18 +467,15 @@
             initDashboard(mockData);
         }
 
-        // Setup Date Picker and Initial Render
         function initDashboard(data) {
             const today = new Date();
             const yesterday = new Date(today);
             yesterday.setDate(today.getDate() - 1);
             const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-            // Set Date Picker default
             document.getElementById('report-date-picker').value = yesterdayStr;
             updateDateDisplay(yesterdayStr);
             
-            // Render with default date
             renderDashboard(data, yesterdayStr);
         }
 
@@ -468,8 +483,9 @@
             let todayStats = { users: new Set(), explicitUserSum: 0, items: 0, explicitQtySum: 0, cost: 0, explicitCostSum: 0 };
             let totalStats = { users: new Set(), explicitUserSum: 0, items: 0, explicitQtySum: 0, cost: 0, explicitCostSum: 0 };
             let drugAggregates = {};
+            
+            let dailyCosts = {};
 
-            // Check if specific columns exist in first row
             const firstRow = data[0] || {};
             const hasUserCol = firstRow['จำนวนผู้ป่วยใช้ยา รวม'] !== undefined;
             const hasQtyCol = firstRow['ปริมาณการใช้ยา รวม'] !== undefined;
@@ -495,17 +511,24 @@
                     if(!isNaN(d)) rowDateStr = d.toISOString().split('T')[0];
                 } catch(e) {}
 
-                // CUMULATIVE (All Time / Fiscal Year)
+                const finalRowCost = hasCostCol ? explicitCostVal : costVal;
+
+                // --- TREND CHART ---
+                if (rowDateStr >= '2024-10-01') {
+                    if (!dailyCosts[rowDateStr]) dailyCosts[rowDateStr] = 0;
+                    dailyCosts[rowDateStr] += finalRowCost;
+                }
+
+                // CUMULATIVE
                 if (hasUserCol) totalStats.explicitUserSum += explicitUserVal;
                 else if (hnVal) totalStats.users.add(hnVal);
 
                 if (hasQtyCol) totalStats.explicitQtySum += explicitQtyVal;
                 else totalStats.explicitQtySum += qtyVal;
 
-                if (hasCostCol) totalStats.explicitCostSum += explicitCostVal;
-                else totalStats.explicitCostSum += costVal;
+                totalStats.explicitCostSum += finalRowCost;
 
-                // TODAY (Filtered by Date Picker)
+                // TODAY
                 if (rowDateStr === targetDateStr) {
                     if (hasUserCol) todayStats.explicitUserSum += explicitUserVal;
                     else if (hnVal) todayStats.users.add(hnVal);
@@ -513,41 +536,38 @@
                     if (hasQtyCol) todayStats.explicitQtySum += explicitQtyVal;
                     else todayStats.explicitQtySum += qtyVal;
 
-                    if (hasCostCol) todayStats.explicitCostSum += explicitCostVal;
-                    else todayStats.explicitCostSum += costVal;
+                    todayStats.explicitCostSum += finalRowCost;
                 }
 
-                // TABLE AGGREGATES (Cumulative)
+                // TABLE
                 if (!drugAggregates[drugVal]) {
                     drugAggregates[drugVal] = { name: drugVal, userSum: 0, qtySum: 0, costSum: 0 };
                 }
                 drugAggregates[drugVal].userSum += hasUserCol ? explicitUserVal : 1;
                 drugAggregates[drugVal].qtySum += hasQtyCol ? explicitQtyVal : qtyVal;
-                drugAggregates[drugVal].costSum += hasCostCol ? explicitCostVal : costVal;
+                drugAggregates[drugVal].costSum += finalRowCost;
             });
 
             // Calculate Finals
             const finalTodayUsers = hasUserCol ? todayStats.explicitUserSum : todayStats.users.size;
             const finalTodayQty = todayStats.explicitQtySum;
-            const finalTodayCost = hasCostCol ? todayStats.explicitCostSum : todayStats.explicitCostSum;
+            const finalTodayCost = todayStats.explicitCostSum;
 
             const finalTotalUsers = hasUserCol ? totalStats.explicitUserSum : totalStats.users.size;
             const finalTotalItems = totalStats.explicitQtySum;
-            const finalTotalCost = hasCostCol ? totalStats.explicitCostSum : totalStats.explicitCostSum;
+            const finalTotalCost = totalStats.explicitCostSum;
 
-            // Prepare Table Data (Top 10)
             const tableData = Object.values(drugAggregates).sort((a, b) => b.costSum - a.costSum);
 
-            // Update UI
             updateDashboardUI({
                 today: { users: finalTodayUsers, items: finalTodayQty, cost: finalTodayCost },
                 total: { users: finalTotalUsers, items: finalTotalItems, cost: finalTotalCost },
-                table: tableData
+                table: tableData,
+                chart: dailyCosts
             });
         }
 
         function updateDashboardUI(stats) {
-            // Animate Numbers
             animateValue("today-users", 0, stats.today.users, 1000);
             animateValue("today-items", 0, stats.today.items, 1000);
             animateValue("today-cost", 0, stats.today.cost, 1000, true);
@@ -556,18 +576,114 @@
             animateValue("total-items", 0, stats.total.items, 1500);
             animateValue("total-cost", 0, stats.total.cost, 1500, true);
 
-            // Render Table
             renderTable(stats.table);
+            renderChart(stats.chart); 
 
-            // Hide Loading
             const loading = document.getElementById('loading');
             loading.style.opacity = '0';
             setTimeout(() => loading.style.display = 'none', 300);
         }
 
+        function renderChart(dailyData) {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            
+            const dates = Object.keys(dailyData).sort();
+            const values = dates.map(d => dailyData[d]);
+            
+            const labels = dates.map(d => {
+                const dateObj = new Date(d);
+                return dateObj.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+            });
+
+            if (trendChartInstance) {
+                trendChartInstance.destroy();
+            }
+
+            trendChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'มูลค่าการใช้ยา (บาท)',
+                        data: values,
+                        borderColor: '#16a34a', // thai-herb-600
+                        backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#16a34a',
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: {
+                        padding: { top: 20 }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'มูลค่า: ' + new Intl.NumberFormat('th-TH').format(context.raw) + ' บาท';
+                                }
+                            },
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            titleColor: '#374151',
+                            bodyColor: '#16a34a',
+                            borderColor: '#e5e7eb',
+                            borderWidth: 1,
+                            padding: 10,
+                            displayColors: false,
+                            bodyFont: { family: "'Prompt', sans-serif" },
+                            titleFont: { family: "'Prompt', sans-serif" }
+                        },
+                        // CHANGED: Configured data labels to be black bold
+                        datalabels: {
+                            display: 'auto', 
+                            align: 'top',
+                            anchor: 'end',
+                            offset: 4,
+                            color: '#000000', // Changed to Black
+                            font: { 
+                                size: 10, 
+                                family: "'Prompt', sans-serif",
+                                weight: 'bold'
+                            },
+                            formatter: function(value, context) {
+                                return new Intl.NumberFormat('th-TH', { notation: "compact", compactDisplay: "short" }).format(value);
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                font: { family: "'Prompt', sans-serif", size: 11 },
+                                maxTicksLimit: 10
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: { borderDash: [2, 4], color: '#f3f4f6' },
+                            ticks: {
+                                font: { family: "'Prompt', sans-serif", size: 11 },
+                                callback: function(value) {
+                                    if(value >= 1000) return value/1000 + 'k';
+                                    return value;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         function animateValue(id, start, end, duration, isCost = false) {
             const obj = document.getElementById(id);
-            // Simple update to avoid conflicting animations on rapid date change
             if (isCost) {
                 obj.innerText = new Intl.NumberFormat('th-TH', { style: 'decimal', maximumFractionDigits: 0 }).format(end);
             } else {
@@ -579,7 +695,6 @@
             const tbody = document.getElementById('top-drugs-table');
             tbody.innerHTML = '';
             
-            // Top 10
             const top10 = data.slice(0, 10);
 
             if (top10.length === 0) {
